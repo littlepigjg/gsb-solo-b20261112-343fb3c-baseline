@@ -147,6 +147,23 @@ def preview():
     return send_file(buffer, mimetype="image/png", max_age=0)
 
 
+@api.post("/masked-adjustments")
+def masked_adjustments():
+    data = payload({"asset_id", "mask_id", "operation", "params", "mode",
+                    "invert", "feather", "strength"})
+    asset = service("processing").masked_adjustment(
+        data.get("asset_id"),
+        data.get("mask_id"),
+        data.get("operation"),
+        data.get("params", {}),
+        data.get("mode", "alpha"),
+        data.get("invert", False),
+        data.get("feather", 0),
+        data.get("strength", 1.0),
+    )
+    return ok({"asset": asset}, 201)
+
+
 @api.post("/samples")
 def samples():
     payload(set())

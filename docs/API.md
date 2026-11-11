@@ -23,6 +23,7 @@
 | POST | `/compare` | 采样误差、PSNR 等比较指标 |
 | POST | `/process` | 执行流程并保存新副本 |
 | POST | `/preview` | 执行流程并返回临时 PNG，不写入素材库 |
+| POST | `/masked-adjustments` | 按同尺寸蒙版局部执行色彩调整并保存副本 |
 | POST | `/samples` | 幂等生成三个示例素材，body 为 `{}` |
 | GET | `/presets` | 列出内置与自定义预设 |
 | POST | `/presets` | 创建预设 |
@@ -55,6 +56,29 @@
 `name` 可省略。未指定的参数采用 `/catalog` 中的默认值；未知参数、字符串形式数字、布尔值充当数字、非有限浮点数及越界数值都会被拒绝。相互依赖参数（如色阶黑场必须小于白场）在算法执行前继续验证。
 
 成功返回的新素材包含 `id`、`parent_id`、`root_id`、`steps`、`url`、`thumbnail_url`、尺寸、字节数和处理耗时。原图文件不变。
+
+## 蒙版调整请求
+
+```json
+{
+  "asset_id": "原图的32位id",
+  "mask_id": "同尺寸蒙版的32位id",
+  "operation": "color_exposure",
+  "params": {"stops": 0.5},
+  "mode": "luminance",
+  "invert": false,
+  "feather": 2,
+  "strength": 0.8
+}
+```
+
+- `operation` 仅支持 `color_gamma`、`color_exposure`、`color_brightness`，`params` 使用各自现有参数定义；未提供时采用默认值。
+- `mode` 为 `alpha` 或 `luminance`；`invert` 为布尔值；`feather` 为 0–8；`strength` 为 0–1。
+- 初始权重：`alpha` 模式为蒙版 `A/255`；`luminance` 模式为 Pillow `L × A / 255²`。权重要先四舍五入为 0–255 的 L 蒙版，再按 `invert` 反相，然后以半径 `feather` 做 `GaussianBlur`；最终权重为 `模糊 L / 255 × strength`。
+- 服务端先对整幅原图的 RGB 应用选中操作，再按最终权重在原色与处理色之间插值，使用 `floor(value + 0.5)` 量化；输出 alpha 始终等于原图 alpha。
+- 原图与蒙版必须尺寸一致，且二者都不会被改写。参数与两个素材在创建副本前完成校验。
+
+成功返回 `201` 与 `{"ok": true, "data": {"asset": {...}}}`。`data.asset` 是原图的直接副本（`parent_id` 指向原图），`history` 可返回完整版本链。
 
 ## 批量请求
 
