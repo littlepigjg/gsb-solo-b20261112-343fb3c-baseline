@@ -35,6 +35,7 @@
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
 | GET | `/exports/{id}/download` | 下载导出产物 |
+| POST | `/contact-sheets` | 生成联系印样 PNG 并返回网格布局 |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
 
@@ -89,6 +90,50 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 联系印样请求
+
+```json
+{
+  "asset_ids": ["图片1的id", "图片2的id", "图片1的id"],
+  "columns": 4,
+  "cell_width": 256,
+  "cell_height": 192,
+  "gap": 8,
+  "margin": 16,
+  "background": "#ffffff"
+}
+```
+
+`asset_ids` 接收 1–24 项，保留输入顺序和重复项；`columns` 为 1–8；`cell_width`、`cell_height` 为 8–1024；`gap`、`margin` 为 0–64；`background` 为 `#RRGGBB`。数值参数必须是整数，布尔值不能冒充整数。`asset_ids` 必填，其余字段省略时使用 `columns=4`、`cell_width=256`、`cell_height=256`、`gap=0`、`margin=0`、`background="#ffffff"`。
+
+每张图片以保持比例的 Lanczos contain 方式缩放（允许放大）并居中放置到单元格，透明像素覆盖在指定背景上。输出尺寸为：
+
+```text
+宽 = 2 * margin + columns * cell_width + (columns - 1) * gap
+高 = 2 * margin + ceil(n / columns) * cell_height + (ceil(n / columns) - 1) * gap
+```
+
+末行未占用的单元格保持背景色。生成结果前会校验全部参数、素材 ID 与最终尺寸；未知 ID、非法数值或超过单边 8192 像素、1600 万像素限制时不会创建任何印样记录或文件。原图不会被修改，重复素材也不会被去重。
+
+成功返回 201，`data.asset` 是可直接通过 `url` 下载的真实 PNG 素材；`data.layout` 按输入顺序排列，每项包含 `asset_id`、从 0 开始的 `index`、`cell`（单元格的 `x/y/w/h`）和 `image_box`（缩放后图片实际放置的 `x/y/w/h`）：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "asset": {"id": "...", "width": 1080, "height": 224, "url": "/api/assets/.../file"},
+    "layout": [
+      {
+        "asset_id": "图片1的id",
+        "index": 0,
+        "cell": {"x": 16, "y": 16, "w": 256, "h": 192},
+        "image_box": {"x": 16, "y": 16, "w": 256, "h": 192}
+      }
+    ]
+  }
+}
+```
 
 ## 状态码
 

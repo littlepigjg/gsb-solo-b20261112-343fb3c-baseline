@@ -214,6 +214,20 @@ def export_download(export_id):
     return send_file(path, mimetype=mime, as_attachment=True, download_name=record["download_name"])
 
 
+@api.post("/contact-sheets")
+def contact_sheet_create():
+    data = payload({"asset_ids", "columns", "cell_width", "cell_height", "gap", "margin", "background"})
+    return ok(service("contact_sheets").create(
+        data.get("asset_ids"),
+        data.get("columns", 4),
+        data.get("cell_width", 256),
+        data.get("cell_height", 256),
+        data.get("gap", 0),
+        data.get("margin", 0),
+        data.get("background", "#ffffff"),
+    ), 201)
+
+
 @api.get("/events")
 def event_list():
     events = service("store").all("events")
