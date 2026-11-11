@@ -6,19 +6,16 @@ from ..imaging import gray_array, rgb_array, from_array, convolution, percentile
 
 def _gradient(image, horizontal, vertical, p):
     gray = gray_array(image)
-    magnitude = np.zeros_like(gray)
-    for top in range(0, image.height, 32):
-        stripe = gray[top:top + 32]
-        gx = convolution(stripe, horizontal)
-        gy = convolution(stripe, vertical)
-        if p["direction"] == "horizontal":
-            value = np.abs(gx)
-        elif p["direction"] == "vertical":
-            value = np.abs(gy)
-        else:
-            value = np.hypot(gx, gy)
-        magnitude[top:top + len(stripe)] = percentile_stretch(value)
-    magnitude *= p["gain"]
+    gx = convolution(gray, horizontal)
+    gy = convolution(gray, vertical)
+    if p["direction"] == "horizontal":
+        value = np.abs(gx)
+    elif p["direction"] == "vertical":
+        value = np.abs(gy)
+    else:
+        value = np.hypot(gx, gy)
+    magnitude = percentile_stretch(value)
+    magnitude = magnitude * p["gain"]
     if p["invert"]:
         magnitude = 255 - np.clip(magnitude, 0, 255)
     return from_array(magnitude, image)
