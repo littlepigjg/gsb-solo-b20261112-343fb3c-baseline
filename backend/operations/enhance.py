@@ -37,25 +37,40 @@ def enhance_detail(image, p, context):
 
 def enhance_bilateral(image, p, context):
     array = rgb_array(image)
+    height, width = array.shape[:2]
     radius = p["radius"]
-    output = np.empty_like(array)
     spatial_sigma = max(radius / 2, 1)
-    for top in range(0, image.height, 32):
-        stripe = array[top:top + 32]
-        padded = np.pad(stripe, ((radius, radius), (radius, radius), (0, 0)),
-                        mode="reflect" if min(stripe.shape[:2]) > 1 else "edge")
+    color_denominator = 2 * p["sigma"] ** 2
+
+    if np.all(array == array[0, 0]):
+        return from_array(array, image)
+
+    padding = ((radius, radius), (radius, radius), (0, 0))
+    padded = np.pad(array, padding,
+                    mode="edge" if height == 1 or width == 1 else "reflect")
+    spatial_weights = {}
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            spatial_weights[(dy, dx)] = np.float32(
+                np.exp(-(dx * dx + dy * dy) / (2 * spatial_sigma ** 2)))
+
+    output = np.empty_like(array)
+    for top in range(0, height, 32):
+        bottom = min(top + 32, height)
+        stripe = array[top:bottom]
         accum = np.zeros_like(stripe)
         weights = np.zeros_like(stripe)
         for dy in range(-radius, radius + 1):
             for dx in range(-radius, radius + 1):
-                neighbor = padded[radius + dy:radius + dy + len(stripe),
-                                  radius + dx:radius + dx + image.width]
-                distance = (neighbor - stripe) ** 2
-                spatial = np.exp(-(dx * dx + dy * dy) / (2 * spatial_sigma ** 2))
-                weight = spatial * np.exp(-distance / (2 * p["sigma"] ** 2))
+                neighbor = padded[top + radius + dy:bottom + radius + dy,
+                                  radius + dx:radius + dx + width]
+                difference = neighbor - stripe
+                color_distance = np.mean(difference ** 2, axis=2, keepdims=True)
+                weight = spatial_weights[(dy, dx)] * np.exp(
+                    -color_distance / color_denominator)
                 accum += neighbor * weight
                 weights += weight
-        output[top:top + len(stripe)] = accum / np.maximum(weights, 1e-8)
+        output[top:bottom] = accum / np.maximum(weights, 1e-8)
     return from_array(output, image)
 
 
