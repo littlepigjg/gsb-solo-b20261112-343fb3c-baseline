@@ -147,6 +147,12 @@ def preview():
     return send_file(buffer, mimetype="image/png", max_age=0)
 
 
+@api.post("/lut/apply")
+def lut_apply():
+    data = payload({"asset_id", "cube", "strength"})
+    return ok(service("lut").apply(data.get("asset_id"), data.get("cube"), data.get("strength")), 201)
+
+
 @api.post("/samples")
 def samples():
     payload(set())

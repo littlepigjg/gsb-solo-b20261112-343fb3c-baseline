@@ -23,6 +23,7 @@
 | POST | `/compare` | 采样误差、PSNR 等比较指标 |
 | POST | `/process` | 执行流程并保存新副本 |
 | POST | `/preview` | 执行流程并返回临时 PNG，不写入素材库 |
+| POST | `/lut/apply` | 应用 Adobe Cube 3D LUT 并保存新副本 |
 | POST | `/samples` | 幂等生成三个示例素材，body 为 `{}` |
 | GET | `/presets` | 列出内置与自定义预设 |
 | POST | `/presets` | 创建预设 |
@@ -55,6 +56,32 @@
 `name` 可省略。未指定的参数采用 `/catalog` 中的默认值；未知参数、字符串形式数字、布尔值充当数字、非有限浮点数及越界数值都会被拒绝。相互依赖参数（如色阶黑场必须小于白场）在算法执行前继续验证。
 
 成功返回的新素材包含 `id`、`parent_id`、`root_id`、`steps`、`url`、`thumbnail_url`、尺寸、字节数和处理耗时。原图文件不变。
+
+## LUT 应用请求
+
+```json
+{
+  "asset_id": "上传响应中的32位id",
+  "strength": 0.8,
+  "cube": "# 我的胶片 LUT\nTITLE Film Look\nLUT_3D_SIZE 2\n0.0 0.0 0.0\n1.0 0.0 0.0\n0.0 1.0 0.0\n1.0 1.0 0.0\n0.0 0.0 1.0\n1.0 0.0 1.0\n0.0 1.0 1.0\n1.0 1.0 1.0\n"
+}
+```
+
+`cube` 是完整的 `.cube` 文本（最大 1 MiB）。支持可选的 `TITLE`、恰好一次的 `LUT_3D_SIZE`（2–17）、`DOMAIN_MIN`/`DOMAIN_MAX`（各三个有限数字，缺省为 0 和 1）以及 `#` 注释；不支持 1D LUT、重复或未知头。数据必须恰好为 `size³` 行，每行三个有限浮点数，顺序为红通道变化最快、绿其次、蓝最慢。`strength` 为 0–1。
+
+源图字节除 255 得到编码 RGB，按各通道 domain 映射并截到 `[0,1]`，在网格上三线性插值；结果再裁到 `[0,1]`，与原始编码 RGB 按 `strength` 混合，最后用 `floor(value*255+0.5)` 量化。alpha 逐像素保留。
+
+```json
+{
+  "ok": true,
+  "data": {
+    "asset": {"id": "新素材id", "parent_id": "源素材id", "root_id": "源素材id", "format": "PNG", "...": "..."},
+    "size": {"width": 384, "height": 320}
+  }
+}
+```
+
+状态码 201。解析或参数失败返回 400，且不会新增素材；`strength=0` 仍会生成像素完全相同的 PNG 副本。
 
 ## 批量请求
 

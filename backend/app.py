@@ -16,6 +16,7 @@ from .analysis import AnalysisService
 from .presets import PresetService
 from .samples import SampleService
 from .diagnostics import DiagnosticsService
+from .lut import LutService
 from .errors import StudioError
 
 
@@ -38,6 +39,7 @@ def create_app(data_dir=None, testing=False):
         "jobs": jobs,
         "exports": exports,
         "presets": presets,
+        "lut": LutService(settings, store, assets),
         "analysis": AnalysisService(assets),
         "samples": SampleService(assets, store),
         "diagnostics": DiagnosticsService(settings, store),
