@@ -21,6 +21,7 @@
 | GET | `/assets/{id}/history` | 从原图到当前结果的版本链 |
 | GET | `/assets/{id}/analysis` | 图像直方图、色谱及亮度分析 |
 | POST | `/compare` | 采样误差、PSNR 等比较指标 |
+| POST | `/diff-maps` | 两图按世界坐标叠加，生成差异 PNG 资产 |
 | POST | `/process` | 执行流程并保存新副本 |
 | POST | `/preview` | 执行流程并返回临时 PNG，不写入素材库 |
 | POST | `/samples` | 幂等生成三个示例素材，body 为 `{}` |
@@ -89,6 +90,28 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 差异图请求
+
+将两张 RGBA 素材分别按 alpha 合成到不透明背景，再按世界坐标叠加比较，生成可直接下载的差异 PNG 资产。
+
+```json
+{
+  "first_id": "第一张图片id",
+  "second_id": "第二张图片id",
+  "offset_x": 120,
+  "offset_y": -40,
+  "tolerance": 8,
+  "background": "#ffffff"
+}
+```
+
+- 第一张左上角位于世界坐标 `(0, 0)`，第二张位于 `(offset_x, offset_y)`。`offset_x`、`offset_y` 为 `-4096` 至 `4096` 的整数，省略时为 `0`。
+- `tolerance` 为 `0` 至 `255` 的整数，省略时为 `0`；`background` 为 `#RRGGBB`，省略时为 `#ffffff`。
+- 公共画布是两张图的外接矩形，`origin` 为 `[世界左边, 世界上边]`，即画布左上角对应的世界坐标；画布其他区域也是 `background`。
+- 比较合成后 RGB 的最大通道绝对差。严格大于 `tolerance` 的像素在差异图中为不透明红色，其余像素全透明。alpha 为 0 的像素中隐藏的 RGB 不参与比较。
+- 返回 `data.asset`（差异素材，可通过 `/assets/{id}/file` 下载）、`origin`、`changed_pixels`、`changed_percent`（占画布像素的百分比，保留两位小数）、`bbox`（变化像素的画布坐标半开包围框 `[x0, y0, x1, y1]`，无变化时为 `null`）和 `max_difference`。
+- 原图保持不变；无效 ID 或参数返回 4xx，且不会生成新素材。画布与普通图片一样受单边 8192 像素和 1600 万像素上限约束。
 
 ## 状态码
 

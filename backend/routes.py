@@ -3,7 +3,7 @@ import io
 import json
 from flask import Blueprint, current_app, jsonify, request, send_file
 from .errors import StudioError
-from .validation import object_value, reject_unknown, number_value, choice_value
+from .validation import object_value, reject_unknown, number_value, choice_value, identifier, color_value
 
 
 api = Blueprint("api", __name__, url_prefix="/api")
@@ -132,6 +132,19 @@ def asset_analysis(asset_id):
 def compare():
     data = payload({"first_id", "second_id"})
     return ok(service("analysis").compare(data.get("first_id"), data.get("second_id")))
+
+
+@api.post("/diff-maps")
+def diff_maps():
+    data = payload({"first_id", "second_id", "offset_x", "offset_y", "tolerance", "background"})
+    first_id = identifier(data.get("first_id"), "第一张图片ID")
+    second_id = identifier(data.get("second_id"), "第二张图片ID")
+    offset_x = number_value(data.get("offset_x", 0), "水平偏移", -4096, 4096, integer=True)
+    offset_y = number_value(data.get("offset_y", 0), "垂直偏移", -4096, 4096, integer=True)
+    tolerance = number_value(data.get("tolerance", 0), "容差", 0, 255, integer=True)
+    background = color_value(data.get("background", "#ffffff"), "背景颜色")
+    return ok(service("diff_maps").build(
+        first_id, second_id, offset_x, offset_y, tolerance, background), 201)
 
 
 @api.post("/process")
