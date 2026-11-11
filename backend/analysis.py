@@ -28,12 +28,18 @@ class AnalysisService:
         gray_visible = gray[visible] if visible.any() else np.array([0], dtype=np.float32)
         luma_histogram = np.bincount(gray_visible.astype(np.uint8), minlength=256)
         histograms["luminance"] = luma_histogram.tolist()
-        probabilities = luma_histogram[luma_histogram > 0] / max(1, luma_histogram.sum())
-        entropy = float(-(probabilities * np.log2(probabilities)).sum())
         laplacian = convolution(gray, [[0, 1, 0], [1, -4, 1], [0, 1, 0]])
+        # 总体统计：全部可见像素（alpha>0）参与，与直方图同源，
+        # 不按分块平均，避免抹掉不同区域之间的差异。
         means = pixels.mean(axis=0)
         std = pixels.std(axis=0)
+        brightness = float(gray_visible.mean())
+        contrast = float(gray_visible.std())
         percentiles = np.percentile(gray_visible, [1, 5, 25, 50, 75, 95, 99])
+        # 熵由总体 256 级亮度直方图计算，保证与 luminance 直方图一致。
+        luma_probabilities = luma_histogram[luma_histogram > 0] / max(1, luma_histogram.sum())
+        # 全透明回退为单个零像素时直方图无正概率，空和会得到 -0.0，归一化为 0。
+        entropy = max(0.0, float(-(luma_probabilities * np.log2(luma_probabilities)).sum()))
         palette_image = image.convert("RGB").quantize(colors=6, method=Image.Quantize.MEDIANCUT)
         palette = palette_image.getpalette()
         colors = sorted(palette_image.getcolors() or [], reverse=True)
@@ -46,7 +52,6 @@ class AnalysisService:
                 "percentage": round(count / (image.width * image.height) * 100, 1),
             })
         suggestions = []
-        brightness = float(gray_visible.mean())
         if brightness < 65:
             suggestions.append({"message": "画面偏暗，可尝试曝光补偿或阴影提亮。", "operation": "color_exposure"})
         elif brightness > 195:
@@ -57,20 +62,6 @@ class AnalysisService:
             suggestions.append({"message": "细节变化较少，可尝试精细锐化；此指标不代表美学质量。", "operation": "enhance_unsharp"})
         if not suggestions:
             suggestions.append({"message": "亮度与反差较均衡，可以从风格滤镜开始探索。", "operation": "filter_vintage"})
-        blocks = [block for block in np.array_split(pixels, 4) if len(block)]
-        gray_blocks = [block for block in np.array_split(gray_visible, 4) if len(block)]
-        means = np.mean([block.mean(axis=0) for block in blocks], axis=0)
-        std = np.sqrt(np.mean([block.var(axis=0) for block in blocks], axis=0))
-        brightness = float(np.mean([block.mean() for block in gray_blocks]))
-        contrast = float(np.sqrt(np.mean([block.var() for block in gray_blocks])))
-        percentiles = np.mean([np.percentile(block, [1, 5, 25, 50, 75, 95, 99])
-                               for block in gray_blocks], axis=0)
-        block_entropies = []
-        for block in gray_blocks:
-            counts = np.bincount(block.astype(np.uint8), minlength=256)
-            probabilities = counts[counts > 0] / len(block)
-            block_entropies.append(float(-(probabilities * np.log2(probabilities)).sum()))
-        entropy = float(np.mean(block_entropies))
         divisor = math.gcd(*original_size)
         return {
             "asset_id": asset_id,
