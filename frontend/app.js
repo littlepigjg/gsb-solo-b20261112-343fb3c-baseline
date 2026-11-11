@@ -669,8 +669,9 @@ async function bootstrap() {
       const previous = new Map(state.jobs.map(job => [job.id, job.status]));
       await refreshJobs();
       for (const job of state.jobs) {
-        if (["completed", "partial", "failed"].includes(job.status) && ["queued", "running", "cancelling"].includes(previous.get(job.id))) {
-          toast(`“${job.title}”：${job.message}`, job.status === "failed" ? "error" : "success");
+        if (["completed", "partial", "failed", "cancelled", "interrupted"].includes(job.status) && ["queued", "running", "cancelling"].includes(previous.get(job.id))) {
+          const type = ["failed", "interrupted"].includes(job.status) ? "error" : "success";
+          toast(`“${job.title}”：${job.message}`, type);
           await refreshStats();
         }
       }

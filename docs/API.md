@@ -71,7 +71,9 @@
 
 任务状态：`queued → running → completed / partial / failed`。取消使用 `cancelling → cancelled`。服务重启后，未完成任务变为 `interrupted`。批内每张图片独立保存，失败不会阻止后续图片处理。
 
-`results` 保存成功素材的 id；`errors` 保存失败图片 id 和原因；`progress` 为 0–100；`done/total` 表示完成尝试的图片数量。取消时保留已完成结果。
+取消与任务结束在同一临界区内裁决：排队或处理中申请取消的任务最终一定进入 `cancelled`，已生成的结果保留；若终态（如 `completed`）先于取消生效，则保持原终态。取消请求落在最后一张图片生成与终态发布之间时，任务同样会收敛到终态，不会停留在 `cancelling`。对任何终态任务重复调用取消接口是幂等的，返回当前终态且不会重新进入活动状态。
+
+`results` 保存成功素材的 id；`errors` 保存失败图片 id 和原因；`progress` 为 0–100；`done/total` 表示完成尝试的图片数量，且 `done` 始终等于 `results` 与 `errors` 数量之和。取消时保留已完成结果。
 
 ## 导出请求
 

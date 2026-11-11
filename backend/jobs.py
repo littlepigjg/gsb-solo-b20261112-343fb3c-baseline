@@ -1,4 +1,16 @@
-"""Bounded background jobs with durable state, cancellation and recovery."""
+"""Bounded background jobs with durable state, cancellation and recovery.
+
+State transitions are serialized by :attr:`JobService.lock`. A cancellation
+request and the worker's terminal publication therefore race as one atomic
+decision instead of two blind overwrites:
+
+* a recorded cancellation always wins over the worker's preferred terminal
+  state, while results already produced are kept;
+* an already-terminal record is never written again, so cancelling a finished
+  job is idempotent and can never move it back to an active state;
+* the cancellation flag/future are removed together with the terminal write,
+  which guarantees every active record still has a worker that can finish it.
+"""
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +22,7 @@ from .storage import utc_now
 LOGGER = logging.getLogger(__name__)
 ACTIVE = {"queued", "running", "cancelling"}
 TERMINAL = {"completed", "partial", "failed", "cancelled", "interrupted"}
+CANCELLED_MESSAGE = "已取消；已完成的处理副本仍然保留。"
 
 
 class JobService:
@@ -66,23 +79,31 @@ class JobService:
             self._execute(job_id, cancellation)
         except Exception:
             LOGGER.exception("Batch job failed: %s", job_id)
-            self.store.update("jobs", job_id, {
-                "status": "failed",
-                "finished_at": utc_now(),
-                "message": "任务异常结束，请查看服务日志。",
-            })
+            try:
+                self._publish_terminal(job_id, cancellation, {
+                    "status": "failed",
+                    "message": "任务异常结束，请查看服务日志。",
+                })
+            except Exception:
+                LOGGER.exception("Failed to finalize job after failure: %s", job_id)
         finally:
+            # Normal paths already remove these atomically with the terminal
+            # write; this only covers a finalization that itself raised.
             with self.lock:
-                self.cancellations.pop(job_id, None)
-                self.futures.pop(job_id, None)
+                self._cleanup_registry(job_id)
 
     def _execute(self, job_id, cancellation):
         record = self.store.get("jobs", job_id)
         results = []
         errors = []
-        self.store.update("jobs", job_id, {
-            "status": "running", "started_at": utc_now(), "message": "正在处理",
-        })
+        with self.lock:
+            current = self.store.get("jobs", job_id)
+            # A cancellation may have landed while the job was still queued;
+            # never downgrade "cancelling" back to "running".
+            if current["status"] == "queued":
+                self.store.update("jobs", job_id, {
+                    "status": "running", "started_at": utc_now(), "message": "正在处理",
+                })
         for index, asset_id in enumerate(record["asset_ids"]):
             if cancellation.is_set():
                 break
@@ -113,24 +134,52 @@ class JobService:
                 "done": index + 1,
                 "progress": round((index + 1) / record["total"] * 100, 1),
             })
-        if cancellation.is_set():
-            status = "cancelled"
-            message = "已取消；已完成的处理副本仍然保留。"
-        elif errors:
+        processed = len(results) + len(errors)
+        if errors:
             status = "partial" if results else "failed"
             message = f"成功 {len(results)} 张，失败 {len(errors)} 张"
         else:
             status = "completed"
             message = f"已完成 {len(results)} 张图片"
-        self.store.update("jobs", job_id, {
+        record, published = self._publish_terminal(job_id, cancellation, {
             "status": status,
             "message": message,
             "results": results,
             "errors": errors,
-            "finished_at": utc_now(),
-            "current_asset_id": None,
+            "done": processed,
+            "progress": round(processed / record["total"] * 100, 1),
         })
-        self.store.event("batch", message, {"job_id": job_id})
+        if published:
+            self.store.event("batch", record["message"], {"job_id": job_id})
+
+    def _cleanup_registry(self, job_id):
+        self.cancellations.pop(job_id, None)
+        self.futures.pop(job_id, None)
+
+    def _publish_terminal(self, job_id, cancellation, changes):
+        """Publish a terminal state with compare-and-set semantics.
+
+        ``changes`` is the worker's preferred outcome. If a cancellation was
+        recorded (flag set or status already ``cancelling``), the outcome
+        becomes ``cancelled`` while the carried results/errors are preserved.
+        An already-terminal record is never overwritten. Returns
+        ``(record, published)`` so callers can avoid duplicate events.
+        """
+        with self.lock:
+            record = self.store.get("jobs", job_id)
+            if record["status"] in TERMINAL:
+                self._cleanup_registry(job_id)
+                return record, False
+            if cancellation.is_set() or record["status"] == "cancelling":
+                changes = {
+                    **changes,
+                    "status": "cancelled",
+                    "message": CANCELLED_MESSAGE,
+                }
+            changes = {**changes, "finished_at": utc_now(), "current_asset_id": None}
+            record = self.store.update("jobs", job_id, changes)
+            self._cleanup_registry(job_id)
+            return record, True
 
     def get(self, job_id):
         identifier(job_id)
@@ -145,17 +194,34 @@ class JobService:
         with self.lock:
             record = self.get(job_id)
             if record["status"] in TERMINAL:
+                # Idempotent: a finished job keeps its terminal state and is
+                # never moved back to an active one.
                 return record
             flag = self.cancellations.get(job_id)
-            if flag:
-                flag.set()
-            return self.store.update("jobs", job_id, {
-                "status": "cancelling", "message": "将在当前操作结束后取消",
-            })
+            if flag is None:
+                # Safety net: an active record must always have a registered
+                # worker because terminal publication and registry cleanup
+                # happen in the same critical section. Without a flag nothing
+                # could advance this job, so end it deterministically instead
+                # of leaving a permanent "cancelling" state.
+                LOGGER.warning("Job %s is active without a worker flag; ending as interrupted", job_id)
+                record = self.store.update("jobs", job_id, {
+                    "status": "interrupted",
+                    "finished_at": utc_now(),
+                    "current_asset_id": None,
+                    "message": "任务工作线程缺失，已安全结束；已完成的结果仍然保留。",
+                })
+                self.futures.pop(job_id, None)
+                return record
+            flag.set()
+            if record["status"] != "cancelling":
+                record = self.store.update("jobs", job_id, {
+                    "status": "cancelling", "message": "将在当前操作结束后取消",
+                })
+            return record
 
     def shutdown(self):
         with self.lock:
             for flag in self.cancellations.values():
                 flag.set()
         self.executor.shutdown(wait=True, cancel_futures=False)
-
