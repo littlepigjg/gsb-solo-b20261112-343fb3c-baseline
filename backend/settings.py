@@ -15,6 +15,8 @@ class Settings:
     max_dimension: int = 8192
     max_batch: int = 24
     max_steps: int = 12
+    max_bundle_assets: int = 24
+    max_bundle_expanded_bytes: int = 64 * 1024 * 1024
     workers: int = 1
 
     @classmethod

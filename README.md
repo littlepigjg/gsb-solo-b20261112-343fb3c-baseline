@@ -99,6 +99,7 @@ gsb_1/
 │   ├── processing.py         # 非破坏式处理流水线
 │   ├── jobs.py               # 后台任务与取消
 │   ├── exports.py            # 格式编码与 ZIP 导出
+│   ├── bundles.py            # 可迁移素材包：祖先闭包导出与原子导入
 │   ├── analysis.py           # 直方图和图像诊断
 │   ├── diagnostics.py        # 系统与数据完整性检查
 │   ├── presets.py            # 可复用处理预设
@@ -131,6 +132,7 @@ gsb_1/
 - 高计算量操作在本机 CPU 执行；后台任务取消在当前算法结束后生效。页面预览适应画布，实际结果保留处理后的真实尺寸。
 - 导出 DPI 是文件元数据，不会额外增加像素。JPEG/WEBP 质量参数仅对对应编码器生效。
 - JSON 元数据下载不包含图片；完整备份请复制整个 `data` 目录。
+- 素材迁移包（`POST /api/bundles/export` 与 `/api/bundles/import`）只交换一个 ZIP：自动补齐祖先、父先子后打包，导入时全量校验通过后才写入，始终生成新 ID、不覆盖现有资产；上传 24 MiB、展开 64 MiB、资产 24 项，详见 [docs/MIGRATION.md](docs/MIGRATION.md)。
 
 接口详见 [docs/API.md](docs/API.md)，架构详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。图像与上传实现参考 [Pillow Image 官方文档](https://pillow.readthedocs.io/en/stable/reference/Image.html) 和 [Flask 上传官方文档](https://flask.palletsprojects.com/en/stable/patterns/fileuploads/)。
 

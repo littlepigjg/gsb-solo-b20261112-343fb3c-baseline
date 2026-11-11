@@ -12,6 +12,7 @@ from .assets import AssetService
 from .processing import ProcessingService
 from .jobs import JobService
 from .exports import ExportService
+from .bundles import BundleService
 from .analysis import AnalysisService
 from .presets import PresetService
 from .samples import SampleService
@@ -28,6 +29,7 @@ def create_app(data_dir=None, testing=False):
     processing = ProcessingService(settings, store, assets, registry)
     jobs = JobService(settings, store, assets, processing)
     exports = ExportService(settings, store, assets, processing)
+    bundles = BundleService(settings, store, assets, exports)
     presets = PresetService(store, registry)
     services = {
         "settings": settings,
@@ -37,6 +39,7 @@ def create_app(data_dir=None, testing=False):
         "processing": processing,
         "jobs": jobs,
         "exports": exports,
+        "bundles": bundles,
         "presets": presets,
         "analysis": AnalysisService(assets),
         "samples": SampleService(assets, store),

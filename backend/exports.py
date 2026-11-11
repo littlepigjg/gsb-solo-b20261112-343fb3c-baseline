@@ -116,6 +116,14 @@ class ExportService:
                     archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         return self._save_file(buffer.getvalue(), "zip", "光屿_批量导出.zip", asset_ids, options, "archive")
 
+    def save_bundle(self, payload, asset_ids):
+        """保存迁移素材包 ZIP，复用导出记录与 /exports/<id>/download。"""
+        record = self._save_file(
+            payload, "zip", "光屿_素材迁移包.zip", asset_ids,
+            {"bundle_version": 1}, "bundle",
+        )
+        return record
+
     def file(self, export_id):
         from .validation import identifier
         identifier(export_id)
@@ -123,6 +131,6 @@ class ExportService:
         path = self.settings.exports / record["filename"]
         if not path.exists():
             raise StudioError("导出文件丢失，请重新导出", status=410)
-        mime = "application/zip" if record["kind"] == "archive" else MIMETYPES[record["options"]["format"]]
+        mime = "application/zip" if record["kind"] in {"archive", "bundle"} else MIMETYPES[record["options"]["format"]]
         return path, record, mime
 

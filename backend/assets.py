@@ -107,6 +107,50 @@ class AssetService:
             finally:
                 temporary.unlink(missing_ok=True)
 
+    def restore(self, new_id, entry, new_parent_id, new_root_id):
+        """通过完整校验后写入迁移资产；PNG 字节原样落盘以保持摘要不变。"""
+        identifier(new_id)
+        path = self._file(new_id)
+        thumbnail_path = self._file(new_id, True)
+        temporary = path.with_suffix(".tmp")
+        image = entry["image"].convert("RGBA")
+        image.info.clear()
+        try:
+            temporary.write_bytes(entry["png"])
+            os.replace(temporary, path)
+            thumbnail = image.copy()
+            thumbnail.thumbnail((320, 240), Image.Resampling.LANCZOS)
+            thumbnail.save(thumbnail_path, format="PNG")
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if digest != entry["sha256"]:
+                raise StudioError("导入图片哈希校验失败", code="hash_mismatch")
+            record = {
+                "id": new_id,
+                "name": entry["name"],
+                "kind": "original" if new_parent_id is None else "result",
+                "width": entry["width"],
+                "height": entry["height"],
+                "mode": "RGBA",
+                "format": "PNG",
+                "bytes": path.stat().st_size,
+                "sha256": digest,
+                "has_alpha": image.getchannel("A").getextrema()[0] < 255,
+                "parent_id": new_parent_id,
+                "root_id": new_root_id,
+                "steps": list(entry["steps"]),
+                "favorite": entry["favorite"],
+                "tags": list(entry["tags"]),
+                "metadata": {"imported_from_bundle": True},
+            }
+            record = self.store.insert("assets", record)
+            return self.public(record)
+        except Exception:
+            path.unlink(missing_ok=True)
+            thumbnail_path.unlink(missing_ok=True)
+            raise
+        finally:
+            temporary.unlink(missing_ok=True)
+
     def load(self, asset_id):
         with self.lock:
             record = self.get(asset_id)

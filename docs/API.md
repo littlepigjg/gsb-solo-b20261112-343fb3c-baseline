@@ -35,6 +35,8 @@
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
 | GET | `/exports/{id}/download` | 下载导出产物 |
+| POST | `/bundles/export` | 导出可迁移素材包（自动补齐祖先，返回导出记录） |
+| POST | `/bundles/import` | multipart 上传素材包，全量校验后导入为新资产 |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
 
@@ -89,6 +91,45 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 素材迁移包
+
+`POST /api/bundles/export` 接收 1–24 个不同的素材 ID：
+
+```json
+{"asset_ids": ["结果图片id", "另一张图片id"]}
+```
+
+服务自动补齐所选素材的全部祖先（沿 `parent_id` 向上），闭包按父先子后排序；若补齐后超过 24 项则返回 400（`bundle_too_large`）。响应 `data` 是一条导出记录（`kind: "bundle"`），沿用 `GET /api/exports/{id}/download` 下载 ZIP，下载名为 `光屿_素材迁移包.zip`。
+
+ZIP 内只允许出现两类成员：
+
+- `manifest.json`
+- `images/<原ID>.png`（ID 为 32 位小写十六进制）
+
+清单结构：
+
+```json
+{
+  "version": 1,
+  "selected": ["原ID"],
+  "assets": [
+    {"id": "...", "name": "中文名称", "parent_id": null, "root_id": "...",
+     "width": 384, "height": 320, "sha256": "...",
+     "file": "images/<原ID>.png", "steps": [], "favorite": false, "tags": []}
+  ]
+}
+```
+
+`sha256` 是包内对应 PNG 字节的摘要。
+
+`POST /api/bundles/import` 接收 multipart 的 `file` 字段。限制：上传 24 MiB、解压展开 64 MiB、资产 24 项。服务先完成整个包的校验，再写入任何资产；坏包不会产生部分记录或孤立文件。校验项包括：成员只能是上述规范集合，拒绝重复成员、路径穿越/绝对路径/反斜杠、目录与符号链接、未知文件；清单版本必须为 1，拒绝错误哈希、错误尺寸、非 PNG、重复 ID、缺失父图、血缘环和错误的根关系。导入始终生成新 ID，不覆盖任何现有资产，按映射恢复父/根关系、名称、步骤、收藏与标签。响应：
+
+```json
+{"ok": true, "data": {"mapping": {"旧ID": "新ID"}, "selected": ["映射后的新ID"]}}
+```
+
+`selected` 按导出请求中的选择顺序映射。迁移说明见 [docs/MIGRATION.md](MIGRATION.md)。
 
 ## 状态码
 

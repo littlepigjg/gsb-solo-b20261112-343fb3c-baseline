@@ -214,6 +214,23 @@ def export_download(export_id):
     return send_file(path, mimetype=mime, as_attachment=True, download_name=record["download_name"])
 
 
+@api.post("/bundles/export")
+def bundle_export():
+    data = payload({"asset_ids"})
+    return ok(service("bundles").export_bundle(data.get("asset_ids")), 201)
+
+
+@api.post("/bundles/import")
+def bundle_import():
+    file = request.files.get("file")
+    if file is None:
+        raise StudioError("请选择素材包 ZIP 文件")
+    limit = service("settings").max_upload_bytes
+    payload = file.stream.read(limit + 1)
+    result = service("bundles").import_bundle(payload)
+    return ok(result, 201)
+
+
 @api.get("/events")
 def event_list():
     events = service("store").all("events")
