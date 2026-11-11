@@ -208,6 +208,12 @@ def export_archive():
     return ok(service("exports").archive(data.get("asset_ids"), data.get("options", {})), 201)
 
 
+@api.post("/animations/gif")
+def animation_gif():
+    data = payload({"frames", "width", "height", "background", "loop"})
+    return ok(service("animations").create(data), 201)
+
+
 @api.get("/exports/<export_id>/download")
 def export_download(export_id):
     path, record, mime = service("exports").file(export_id)

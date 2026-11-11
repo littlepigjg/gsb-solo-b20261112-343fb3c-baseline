@@ -34,6 +34,7 @@
 | POST | `/jobs/{id}/cancel` | 申请取消，body 为 `{}` |
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
+| POST | `/animations/gif` | 多帧素材合成为真实 GIF 动画 |
 | GET | `/exports/{id}/download` | 下载导出产物 |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
@@ -89,6 +90,57 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## GIF 动画请求
+
+`POST /api/animations/gif` 将 2–24 个已有素材按输入顺序合成为单个真实 GIF，不会新增图像资产，也不修改原图，允许同一素材重复出现。
+
+```json
+{
+  "frames": [
+    {"asset_id": "第一张素材的32位id", "duration_ms": 200},
+    {"asset_id": "第二张素材的32位id", "duration_ms": 350},
+    {"asset_id": "第一张素材的32位id", "duration_ms": 200}
+  ],
+  "width": 640,
+  "height": 480,
+  "background": "#ffffff",
+  "loop": 0
+}
+```
+
+字段约束：
+
+- `frames`：2–24 项，每项含 `asset_id`（32 位素材 id）与 `duration_ms`（10–10000 的整数，且为 10 的倍数）。
+- `width`、`height`：1–1024 的整数，为 GIF 画布尺寸。
+- `background`：`#RRGGBB` 背景色；每帧素材按等比 Lanczos contain 缩放（允许放大）并居中铺到该背景上，RGBA 先按直边 alpha 正确合成。
+- `loop`：0–65535；`0` 表示无限循环。
+
+全片使用同一张不超过 256 色的全局调色板且关闭抖动：可见颜色总数不超过 256 时颜色被准确保持，不会逐帧独立调色而产生闪变。编码器可合并连续完全相同的帧（总时长与画面时序不变），非连续重复帧不会丢失。
+
+成功响应（201）：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "export": {
+      "id": "导出记录id",
+      "filename": "….gif",
+      "download_name": "首张素材名.gif",
+      "bytes": 12345,
+      "asset_ids": ["…", "…", "…"],
+      "options": {"format": "GIF", "kind": "animation", "width": 640, "height": 480, "background": "#ffffff", "loop": 0, "frames": []},
+      "kind": "animation",
+      "url": "/api/exports/导出记录id/download"
+    },
+    "frame_count": 3,
+    "total_duration_ms": 750
+  }
+}
+```
+
+`frame_count` 为逻辑输入帧数，`total_duration_ms` 为各逻辑帧时长之和；导出记录沿用可下载导出体系，通过 `GET /api/exports/{id}/download` 下载 `image/gif` 文件。任何错误输入或缺失素材都会在写入导出记录之前失败，错误响应与其他接口一致。
 
 ## 状态码
 
