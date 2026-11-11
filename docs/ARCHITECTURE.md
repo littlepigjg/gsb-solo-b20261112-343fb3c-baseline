@@ -15,6 +15,7 @@ Flask 路由与错误边界
         ├── ExportService ─ 实际格式编码 / ZIP 打包
         ├── Analysis ────── 采样直方图 / 色谱 / 误差分析
         ├── Presets ─────── 内置与自定义 JSON 流程
+        ├── Palettes ────── GIMP Palette 严格解析 / 规范化 GPL / 色卡 PNG 入库
         └── Diagnostics ── 依赖与文件完整性检查
                      │
             JsonStore + 本地图片目录

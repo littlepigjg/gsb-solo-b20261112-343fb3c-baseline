@@ -4,6 +4,7 @@ import json
 from flask import Blueprint, current_app, jsonify, request, send_file
 from .errors import StudioError
 from .validation import object_value, reject_unknown, number_value, choice_value
+from .palettes import MIN_SWATCH_SIZE, MAX_SWATCH_SIZE
 
 
 api = Blueprint("api", __name__, url_prefix="/api")
@@ -151,6 +152,21 @@ def preview():
 def samples():
     payload(set())
     return ok(service("samples").ensure())
+
+
+@api.post("/palettes/convert")
+def palette_convert():
+    data = payload({"text", "swatch_size"})
+    text = data.get("text")
+    if not isinstance(text, str):
+        raise StudioError("text 必须是 UTF-8 GIMP Palette 文本")
+    if "swatch_size" not in data:
+        raise StudioError("swatch_size 不能为空")
+    swatch_size = number_value(
+        data.get("swatch_size"), "swatch_size",
+        MIN_SWATCH_SIZE, MAX_SWATCH_SIZE, integer=True,
+    )
+    return ok(service("palettes").convert(text, swatch_size), 201)
 
 
 @api.get("/presets")

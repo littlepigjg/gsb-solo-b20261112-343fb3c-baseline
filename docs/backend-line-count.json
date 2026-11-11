@@ -1,9 +1,9 @@
 {
   "scope": "backend/**/*.py only; excludes frontend, tests, scripts, run.py and dependencies",
-  "files": 35,
-  "physical_lines": 5574,
-  "nonblank_noncomment_lines": 5114,
-  "code_lines_excluding_docstrings": 5074,
+  "files": 36,
+  "physical_lines": 5792,
+  "nonblank_noncomment_lines": 5305,
+  "code_lines_excluding_docstrings": 5255,
   "modules": [
     {
       "file": "backend/__init__.py",
@@ -13,21 +13,21 @@
     },
     {
       "file": "backend/analysis.py",
-      "physical_lines": 106,
-      "nonblank_noncomment_lines": 101,
-      "code_lines_excluding_docstrings": 100
+      "physical_lines": 120,
+      "nonblank_noncomment_lines": 115,
+      "code_lines_excluding_docstrings": 114
     },
     {
       "file": "backend/app.py",
-      "physical_lines": 106,
-      "nonblank_noncomment_lines": 96,
-      "code_lines_excluding_docstrings": 95
+      "physical_lines": 108,
+      "nonblank_noncomment_lines": 98,
+      "code_lines_excluding_docstrings": 97
     },
     {
       "file": "backend/assets.py",
-      "physical_lines": 167,
-      "nonblank_noncomment_lines": 153,
-      "code_lines_excluding_docstrings": 152
+      "physical_lines": 168,
+      "nonblank_noncomment_lines": 154,
+      "code_lines_excluding_docstrings": 153
     },
     {
       "file": "backend/catalog/__init__.py",
@@ -103,9 +103,9 @@
     },
     {
       "file": "backend/exports.py",
-      "physical_lines": 120,
-      "nonblank_noncomment_lines": 109,
-      "code_lines_excluding_docstrings": 108
+      "physical_lines": 128,
+      "nonblank_noncomment_lines": 117,
+      "code_lines_excluding_docstrings": 116
     },
     {
       "file": "backend/imaging.py",
@@ -139,15 +139,15 @@
     },
     {
       "file": "backend/operations/edges.py",
-      "physical_lines": 88,
-      "nonblank_noncomment_lines": 69,
-      "code_lines_excluding_docstrings": 68
+      "physical_lines": 92,
+      "nonblank_noncomment_lines": 73,
+      "code_lines_excluding_docstrings": 72
     },
     {
       "file": "backend/operations/enhance.py",
-      "physical_lines": 100,
-      "nonblank_noncomment_lines": 75,
-      "code_lines_excluding_docstrings": 74
+      "physical_lines": 101,
+      "nonblank_noncomment_lines": 76,
+      "code_lines_excluding_docstrings": 75
     },
     {
       "file": "backend/operations/formatting.py",
@@ -157,15 +157,21 @@
     },
     {
       "file": "backend/operations/geometry.py",
-      "physical_lines": 220,
-      "nonblank_noncomment_lines": 175,
-      "code_lines_excluding_docstrings": 174
+      "physical_lines": 225,
+      "nonblank_noncomment_lines": 180,
+      "code_lines_excluding_docstrings": 179
     },
     {
       "file": "backend/operations/watermark.py",
       "physical_lines": 124,
       "nonblank_noncomment_lines": 107,
       "code_lines_excluding_docstrings": 106
+    },
+    {
+      "file": "backend/palettes.py",
+      "physical_lines": 160,
+      "nonblank_noncomment_lines": 135,
+      "code_lines_excluding_docstrings": 125
     },
     {
       "file": "backend/presets.py",
@@ -187,9 +193,9 @@
     },
     {
       "file": "backend/routes.py",
-      "physical_lines": 229,
-      "nonblank_noncomment_lines": 158,
-      "code_lines_excluding_docstrings": 157
+      "physical_lines": 245,
+      "nonblank_noncomment_lines": 172,
+      "code_lines_excluding_docstrings": 171
     },
     {
       "file": "backend/samples.py",
@@ -205,9 +211,9 @@
     },
     {
       "file": "backend/storage.py",
-      "physical_lines": 159,
-      "nonblank_noncomment_lines": 138,
-      "code_lines_excluding_docstrings": 133
+      "physical_lines": 166,
+      "nonblank_noncomment_lines": 145,
+      "code_lines_excluding_docstrings": 140
     },
     {
       "file": "backend/validation.py",

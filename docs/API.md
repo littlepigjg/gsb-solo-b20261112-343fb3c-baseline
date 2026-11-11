@@ -24,6 +24,7 @@
 | POST | `/process` | 执行流程并保存新副本 |
 | POST | `/preview` | 执行流程并返回临时 PNG，不写入素材库 |
 | POST | `/samples` | 幂等生成三个示例素材，body 为 `{}` |
+| POST | `/palettes/convert` | GIMP Palette 文本转结构化颜色与色卡 PNG |
 | GET | `/presets` | 列出内置与自定义预设 |
 | POST | `/presets` | 创建预设 |
 | PATCH | `/presets/{id}` | 修改自定义预设 |
@@ -37,6 +38,30 @@
 | GET | `/exports/{id}/download` | 下载导出产物 |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
+
+## 调色板转换请求
+
+```json
+{
+  "text": "GIMP Palette\nName: 烟霞配色\nColumns: 2\n# 注释\n255 138 101 晚霞橙\n94 84 158 暮山紫\n248 237 225\n",
+  "swatch_size": 24
+}
+```
+
+`text` 为 UTF-8 GIMP Palette 文本（兼容 CRLF），必须以 `GIMP Palette` 首行开始；可选 `Name:`、`Columns:` 头部，缺省分别为 `Imported`、`4`（Columns 范围 1–16）。空行和 `#` 注释被忽略；颜色行为三个 0–255 整数加可选名称（允许空格与中文），缺省名称为从 1 起的 `Color N`。颜色数量必须在 1–256 之间，重复颜色保留且顺序不变。非整数或越界通道、重复头部、数据开始后的头部、未知头部、异常控制字符、超过 256 KiB 的文本均返回 400（体积超限为 413）。`swatch_size` 必填且为 8–128 的整数。
+
+成功返回 201，`data` 含：
+
+- `name`、`columns`：解析结果；
+- `colors`：逐项 `{"rgb": [r, g, b], "name": "..."}`；
+- `gpl`：规范化文本，首行 `GIMP Palette`，随后是 `Name:`、`Columns:` 和单独的 `#` 行，每色一行 `R G B<TAB>name`，以 LF 结束；重新导入结果与本次完全一致；
+- `asset`：真实写入素材库的色卡 PNG 记录，其 `url` 可直接下载。色卡宽 `columns × swatch_size`、高 `ceil(n / columns) × swatch_size`，色块不描边、按行排列，末行空格透明。
+
+解析在写入前全部完成，无效文本不会产生素材、文件或事件。命令行互操作示例见 `examples/palette_interop.py`：
+
+```bash
+python examples/palette_interop.py my-palette.gpl --swatch-size 32
+```
 
 ## 处理请求
 

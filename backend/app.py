@@ -16,6 +16,7 @@ from .analysis import AnalysisService
 from .presets import PresetService
 from .samples import SampleService
 from .diagnostics import DiagnosticsService
+from .palettes import PaletteService
 from .errors import StudioError
 
 
@@ -41,6 +42,7 @@ def create_app(data_dir=None, testing=False):
         "analysis": AnalysisService(assets),
         "samples": SampleService(assets, store),
         "diagnostics": DiagnosticsService(settings, store),
+        "palettes": PaletteService(assets, store),
     }
     app = Flask(__name__, root_path=".", static_folder=str(PROJECT_ROOT / "frontend"), static_url_path="/static")
     app.config.update(
