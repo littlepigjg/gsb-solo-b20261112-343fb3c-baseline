@@ -214,6 +214,12 @@ def export_download(export_id):
     return send_file(path, mimetype=mime, as_attachment=True, download_name=record["download_name"])
 
 
+@api.post("/atlases")
+def atlas_create():
+    data = payload({"items", "max_width", "max_height", "padding", "trim", "extrude"})
+    return ok(service("atlases").create(data), 201)
+
+
 @api.get("/events")
 def event_list():
     events = service("store").all("events")

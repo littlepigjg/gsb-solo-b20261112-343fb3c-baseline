@@ -35,6 +35,7 @@
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
 | GET | `/exports/{id}/download` | 下载导出产物 |
+| POST | `/atlases` | 将已有素材打包为 PNG 精灵图集 |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
 
@@ -89,6 +90,33 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 精灵图集请求
+
+`POST /atlases` 把已有素材按输入顺序打包为一张 PNG 精灵图集，并保存为新的结果素材。成功响应为 201，`data` 含 `asset`（新图集素材，`url` 可直接下载）和 `sprites`（按输入顺序排列的精灵列表）。
+
+```json
+{
+  "items": [
+    {"asset_id": "素材1的id", "name": "idle"},
+    {"asset_id": "素材2的id", "name": "run"}
+  ],
+  "max_width": 512,
+  "max_height": 512,
+  "padding": 2,
+  "trim": true,
+  "extrude": false
+}
+```
+
+- `items` 必须为 1–24 项，每项只含 `asset_id` 和非空且唯一的 `name`。同一个 `asset_id` 可以用不同 `name` 重复打包。
+- `max_width`、`max_height` 为 8–4096 的整数；`padding` 为 0–16 的整数；`trim`、`extrude` 为布尔值。省略时分别默认 `4096`、`4096`、`0`、`false`、`false`。
+- `trim=true` 按 `alpha > 0` 的最小包围框裁去全透明边；完全透明素材保留透明的 1×1 占位并标记 `empty=true`。`trim=false` 保持素材全幅。任何模式下完全透明素材的 `source_rect` 均为 `[0,0,0,0]`。
+- 布局是确定性的水平货架：每项占位宽高为裁后宽高各加 `2*padding`，从 `(0,0)` 开始依次向右放置；当前行放不下时换行，下一行 `y` 增加上一行最高占位高度。图集宽固定为 `max_width`，高为最后一行底部。任一单项占位或图集总高超过限制时整个请求返回 400。
+- `extrude=true` 时间距区域复制最近的边界像素（包含 alpha）；`false` 时为透明。各精灵占位互不重叠。
+- 不旋转、不缩放、不重采样，精灵像素与源图对应区域完全一致。
+
+响应中的 `rect` 是精灵内容在图集中的 `[x, y, w, h]`，`source_size` 是原素材尺寸，`source_rect` 是从原素材裁剪的 `[x, y, w, h]`。对非空精灵，`atlas.crop(rect)` 与 `原素材.crop(source_rect)` 的 RGBA 像素逐点一致。处理失败不会新增素材，也不会改动原素材。
 
 ## 状态码
 
