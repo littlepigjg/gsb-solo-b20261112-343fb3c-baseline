@@ -147,6 +147,18 @@ def preview():
     return send_file(buffer, mimetype="image/png", max_age=0)
 
 
+@api.post("/reframes")
+def reframes():
+    data = payload({"asset_id", "focus", "anchor", "targets"})
+    result = service("reframes").create(
+        data.get("asset_id"),
+        data.get("focus"),
+        data.get("anchor"),
+        data.get("targets"),
+    )
+    return ok(result, 201)
+
+
 @api.post("/samples")
 def samples():
     payload(set())

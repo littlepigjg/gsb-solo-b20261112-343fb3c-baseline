@@ -63,9 +63,10 @@ class AssetService:
         self.store.event("upload", f"导入 {name}", {"asset_id": record["id"]})
         return record
 
-    def save(self, image, name, kind="result", parent=None, steps=None, metadata=None):
+    def save(self, image, name, kind="result", parent=None, steps=None, metadata=None, enforce_limits=True):
         from .validation import dimension_guard
-        dimension_guard(*image.size, self.settings)
+        if enforce_limits:
+            dimension_guard(*image.size, self.settings)
         asset_id = new_id()
         path = self._file(asset_id)
         thumbnail_path = self._file(asset_id, True)
@@ -164,4 +165,14 @@ class AssetService:
             record = self.get(parent_id) if parent_id else None
         lineage.reverse()
         return lineage
+
+    def discard(self, asset_id):
+        """Internal rollback helper: remove a record and its files without delete guards."""
+        with self.lock:
+            try:
+                self.store.delete("assets", asset_id)
+            except Exception:
+                pass
+            self._file(asset_id).unlink(missing_ok=True)
+            self._file(asset_id, thumbnail=True).unlink(missing_ok=True)
 

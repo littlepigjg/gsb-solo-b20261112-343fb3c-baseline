@@ -11,6 +11,7 @@ Flask 路由与错误边界
         ├── AssetService ── 图片校验 / EXIF 归一化 / PNG 与缩略图
         ├── Registry ────── 参数协议 / 严格校验 / 算法注册
         ├── Processing ──── 有序执行 / 资源限制 / 新副本和溯源
+        ├── ReframeService ─ focus 锚定 / 连续窗口几何 / 多目标全有或全无
         ├── JobService ──── 单工作线程 / 进度 / 取消 / 重启恢复
         ├── ExportService ─ 实际格式编码 / ZIP 打包
         ├── Analysis ────── 采样直方图 / 色谱 / 误差分析
@@ -36,6 +37,8 @@ Flask 路由与错误边界
 `operations/` 中的函数接收 `(image, params, context)`，返回 `PIL.Image.Image`。参数从 `catalog/` 校验后传入；同一份目录定义也提供给前端生成参数表单。大多数色彩与边缘算法单独保留原始 Alpha 通道，几何操作则对整幅 RGBA 图变换。
 
 `catalog/` 文件是运行时直接使用的 Python 源码，包含每个操作的描述、算法、参数类型、默认值、范围、步进、选项、帮助文本和示例请求。`scripts/generate_catalog.py` 是维护这些定义的编译工具。
+
+`ReframeService` 不属于操作目录：它是面向多目标输出的独立同步服务。每个目标按目标长宽比求源图内最大连续窗口，用 focus 矩形推导允许窗口区间并验证可行性，再按 anchor 求理想窗口位置并钳制。全部目标的几何在写入任何素材记录前完成规划，任一目标不可行即整体拒绝；保存阶段若中途失败，会回滚已生成的副本。窗口坐标保持浮点，直接作为 Pillow Lanczos 重采样的 `box` 参数，避免先取整裁剪带来的二次采样误差；RGBA 经预乘 alpha 重采样，每个结果都是以原图为根的独立直接副本。
 
 ## 存储模型
 
