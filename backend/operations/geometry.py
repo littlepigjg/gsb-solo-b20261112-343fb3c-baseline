@@ -1,5 +1,6 @@
 """Cropping, resampling, canvas changes and affine transformations."""
 import math
+import numpy as np
 from PIL import Image, ImageOps, ImageChops, ImageDraw, ImageColor
 from ..errors import StudioError
 from ..imaging import checked_size, RESAMPLING
@@ -108,14 +109,33 @@ def resize_fit(image, p, context):
 
 
 def resize_fill(image, p, context):
-    size = checked_size(p["width"], p["height"], context)
-    scale = max(size[0] / image.width, size[1] / image.height)
-    crop_width, crop_height = size[0] / scale, size[1] / scale
-    left = round((image.width - crop_width) * p["anchor_x"] / 100)
-    top = round((image.height - crop_height) * p["anchor_y"] / 100)
-    region = image.crop((left, top, left + round(crop_width), top + round(crop_height)))
-    planes = [channel.resize(size, Image.Resampling.LANCZOS) for channel in region.split()]
-    return Image.merge("RGBA", planes)
+    """等比 cover：连续坐标窗口 + 透明感知 Lanczos。
+
+    先按目标宽高比取源图中最大的等比窗口（窗口比例与目标完全一致），
+    窗口位置由锚点百分比在连续坐标上决定；再把该浮点窗口通过单遍
+    Lanczos 重采样到目标尺寸，避免“先整数裁剪再缩放”带来的构图偏移。
+
+    Alpha 语义与 Pillow 一致：RGBA 经预乘（RGBa）后重采样再还原，
+    全透明像素的隐藏色不会污染半透明边缘。
+    """
+    width, height = checked_size(p["width"], p["height"], context)
+    scale = max(width / image.width, height / image.height)
+    window_width = width / scale
+    window_height = height / scale
+    left = (image.width - window_width) * p["anchor_x"] / 100
+    top = (image.height - window_height) * p["anchor_y"] / 100
+    # Pillow 的 C 层以 32 位浮点接收并校验 box。浮点误差可能让贴边窗口
+    # 越界（例如窗口高比源高多 2e-15、top 变成 -1.8e-15，截断为 float32
+    # 后被判定为负偏移）。先在连续坐标上定位，再把最终的 float32 分量
+    # 钳制进 [0, 源尺寸]，保证窗口合法且保持目标宽高比。
+    left = min(max(left, 0.0), image.width - window_width)
+    top = min(max(top, 0.0), image.height - window_height)
+    box_left = max(float(np.float32(left)), 0.0)
+    box_top = max(float(np.float32(top)), 0.0)
+    box_right = min(float(np.float32(left + window_width)), float(image.width))
+    box_bottom = min(float(np.float32(top + window_height)), float(image.height))
+    box = (box_left, box_top, box_right, box_bottom)
+    return image.resize((width, height), Image.Resampling.LANCZOS, box=box)
 
 
 def resize_pad(image, p, context):
