@@ -3,6 +3,7 @@ import hashlib
 import io
 import os
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from PIL import Image
 from .errors import StudioError, Conflict
@@ -16,11 +17,38 @@ class AssetService:
         self.settings = settings
         self.store = store
         self.lock = threading.RLock()
+        # 非破坏处理在“读取源图 → 发布副本”期间持有的使用权计数。
+        # 删除必须等待计数清零，保证处理与删除之间有明确先后顺序。
+        self._usage = {}
+        self._usage_changed = threading.Condition(self.lock)
 
     def _file(self, asset_id, thumbnail=False):
         identifier(asset_id)
         suffix = ".thumb.png" if thumbnail else ".png"
         return self.settings.media / (asset_id + suffix)
+
+    @contextmanager
+    def usage_claim(self, asset_id):
+        """在持有有效使用权期间保护源素材不被删除。
+
+        进入时即确认素材仍然存在并登记使用权；非破坏处理从读取源图前
+        进入，到新副本发布后退出。声明期内删除请求会等待，随后按已有
+        后代保护规则拒绝。声明前素材已被删除则明确失败，不产生悬空副本。
+        """
+        identifier(asset_id)
+        with self.lock:
+            # 先确认记录仍存在；删除成功后这里抛出 MissingRecord(404)。
+            self.store.get("assets", asset_id)
+            self._usage[asset_id] = self._usage.get(asset_id, 0) + 1
+            try:
+                yield
+            finally:
+                remaining = self._usage[asset_id] - 1
+                if remaining:
+                    self._usage[asset_id] = remaining
+                else:
+                    self._usage.pop(asset_id, None)
+                    self._usage_changed.notify_all()
 
     def public(self, record):
         result = dict(record)
@@ -80,6 +108,10 @@ class AssetService:
                 thumbnail.thumbnail((320, 240), Image.Resampling.LANCZOS)
                 thumbnail.save(thumbnail_path, format="PNG")
                 digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                # 发布前的最终复核：处理持有使用权期间父素材不应被删除。
+                # 若父记录已不存在则拒绝发布，避免产生悬空副本。
+                if parent is not None:
+                    self.store.get("assets", parent["id"])
                 record = {
                     "id": asset_id,
                     "name": name,
@@ -140,8 +172,13 @@ class AssetService:
         return self.public(self.store.update("assets", asset_id, validated))
 
     def delete(self, asset_id):
+        identifier(asset_id)
         with self.lock:
             record = self.get(asset_id)
+            # 等待进行中的非破坏处理完成：处理先取得使用权时，删除必须
+            # 让其先把副本发布，随后按后代保护规则拒绝本次删除。
+            while self._usage.get(asset_id):
+                self._usage_changed.wait()
             for job in self.store.all("jobs"):
                 if job["status"] in {"queued", "running", "cancelling"} and asset_id in job["asset_ids"]:
                     raise Conflict("图片正在批量任务中使用，任务结束后才能删除")

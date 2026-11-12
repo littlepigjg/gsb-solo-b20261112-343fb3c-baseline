@@ -39,24 +39,28 @@ class ProcessingService:
             name = text_value(name, "结果名称", 180, 1)
         started = time.perf_counter()
         with self.compute_lock:
-            image, parent = self.assets.load(asset_id)
-            image, timings = self.apply_steps(image, steps, progress, cancelled)
-            if cancelled and cancelled():
-                raise StudioError("任务已取消", code="cancelled", status=409)
-            last = self.registry.spec(steps[-1]["operation"])
-            if name is None:
-                base = parent["name"].rsplit(".", 1)[0][:100]
-                name = f"{base} · {last['title']}"
-            result = self.assets.save(
-                image,
-                name=name,
-                parent=parent,
-                steps=steps,
-                metadata={
-                    "timings": timings,
-                    "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
-                },
-            )
+            # 声明源素材使用权：从读取源图到副本发布期间，删除必须等待，
+            # 随后按后代保护规则拒绝；若源素材已先被删除，则在此明确失败，
+            # 不会发布父级缺失的悬空副本。
+            with self.assets.usage_claim(asset_id):
+                image, parent = self.assets.load(asset_id)
+                image, timings = self.apply_steps(image, steps, progress, cancelled)
+                if cancelled and cancelled():
+                    raise StudioError("任务已取消", code="cancelled", status=409)
+                last = self.registry.spec(steps[-1]["operation"])
+                if name is None:
+                    base = parent["name"].rsplit(".", 1)[0][:100]
+                    name = f"{base} · {last['title']}"
+                result = self.assets.save(
+                    image,
+                    name=name,
+                    parent=parent,
+                    steps=steps,
+                    metadata={
+                        "timings": timings,
+                        "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+                    },
+                )
         self.store.event("process", f"完成 {name}", {
             "source_id": asset_id,
             "result_id": result["id"],
