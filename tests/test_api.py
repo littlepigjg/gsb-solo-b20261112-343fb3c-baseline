@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import time
 import zipfile
 import pytest
@@ -81,6 +82,120 @@ def test_archive(client, uploaded):
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["assets"] == [uploaded["id"]]
         assert archive.testzip() is None
+
+
+def upload_color(client, color, name):
+    buffer = io.BytesIO()
+    Image.new("RGB", (48, 48), color).save(buffer, "PNG")
+    buffer.seek(0)
+    response = client.post("/api/assets", data={"file": (buffer, name)})
+    assert response.status_code == 201, response.json
+    return response.json["data"]
+
+
+def test_archive_dedupes_and_matches_manifest(client, uploaded):
+    green = upload_color(client, (0, 255, 0), "green.png")
+    blue = upload_color(client, (0, 0, 255), "blue.png")
+    ids = [blue["id"], uploaded["id"], green["id"]]
+    response = client.post("/api/exports/archive", json={
+        "asset_ids": [ids[0], ids[1], ids[0], ids[2], ids[1]],
+        "options": {"format": "PNG"},
+    })
+    assert response.status_code == 201, response.json
+    record = response.json["data"]
+    assert record["asset_ids"] == ids
+    content = client.get(record["url"]).data
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        names = archive.namelist()
+        assert names == [f"01_{ids[0][:8]}.png", f"02_{ids[1][:8]}.png", f"03_{ids[2][:8]}.png", "manifest.json"]
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["assets"] == ids
+        assert manifest["count"] == 3
+        with Image.open(io.BytesIO(archive.read(names[0]))) as image:
+            assert image.convert("RGB").getpixel((24, 24)) == (0, 0, 255)
+        with Image.open(io.BytesIO(archive.read(names[1]))) as image:
+            assert image.size == (384, 320)
+        with Image.open(io.BytesIO(archive.read(names[2]))) as image:
+            assert image.convert("RGB").getpixel((24, 24)) == (0, 255, 0)
+        assert archive.testzip() is None
+
+
+def test_archive_order_not_affected_by_encode_speed(client, app, monkeypatch):
+    red = upload_color(client, (255, 0, 0), "red.png")
+    green = upload_color(client, (0, 255, 0), "green.png")
+    blue = upload_color(client, (0, 0, 255), "blue.png")
+    ids = [red["id"], green["id"], blue["id"]]
+    assets = app.extensions["studio"]["assets"]
+    original_load = assets.load
+
+    def slowed_load(asset_id):
+        if asset_id == ids[0]:
+            time.sleep(0.5)  # first selection finishes encoding last
+        return original_load(asset_id)
+
+    monkeypatch.setattr(assets, "load", slowed_load)
+    response = client.post("/api/exports/archive", json={"asset_ids": ids, "options": {"format": "PNG"}})
+    assert response.status_code == 201, response.json
+    record = response.json["data"]
+    content = client.get(record["url"]).data
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        names = archive.namelist()
+        assert names[:3] == [f"01_{ids[0][:8]}.png", f"02_{ids[1][:8]}.png", f"03_{ids[2][:8]}.png"]
+        with Image.open(io.BytesIO(archive.read(names[0]))) as image:
+            assert image.convert("RGB").getpixel((10, 10)) == (255, 0, 0)
+        with Image.open(io.BytesIO(archive.read(names[2]))) as image:
+            assert image.convert("RGB").getpixel((10, 10)) == (0, 0, 255)
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["assets"] == ids
+        assert manifest["count"] == 3
+
+
+def assert_no_export_created(client, app, before):
+    assert client.get("/api/stats").json["data"]["exports"] == before
+    exports_dir = app.extensions["studio"]["settings"].exports
+    assert os.listdir(exports_dir) == []
+
+
+def test_archive_with_missing_member_aborts(client, uploaded, app):
+    before = client.get("/api/stats").json["data"]["exports"]
+    response = client.post("/api/exports/archive", json={
+        "asset_ids": [uploaded["id"], "0" * 32],
+        "options": {"format": "PNG"},
+    })
+    assert response.status_code == 404
+    assert response.json["ok"] is False
+    assert_no_export_created(client, app, before)
+
+
+def test_archive_with_missing_media_aborts(client, uploaded, app):
+    settings = app.extensions["studio"]["settings"]
+    (settings.media / f"{uploaded['id']}.png").unlink()
+    before = client.get("/api/stats").json["data"]["exports"]
+    response = client.post("/api/exports/archive", json={
+        "asset_ids": [uploaded["id"]],
+        "options": {"format": "PNG"},
+    })
+    assert response.status_code == 410
+    assert response.json["ok"] is False
+    assert_no_export_created(client, app, before)
+
+
+def test_archive_encode_failure_aborts(client, uploaded, app, monkeypatch):
+    exports_service = app.extensions["studio"]["exports"]
+
+    def broken_encode(image, options):
+        raise RuntimeError("simulated encoder crash")
+
+    monkeypatch.setattr(exports_service, "encode", broken_encode)
+    before = client.get("/api/stats").json["data"]["exports"]
+    response = client.post("/api/exports/archive", json={
+        "asset_ids": [uploaded["id"]],
+        "options": {"format": "PNG"},
+    })
+    assert response.status_code == 422
+    assert response.json["ok"] is False
+    assert response.json["error"]["code"] == "encode_failed"
+    assert_no_export_created(client, app, before)
 
 
 def test_preview_is_ephemeral(client, uploaded):

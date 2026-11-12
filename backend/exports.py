@@ -91,7 +91,7 @@ class ExportService:
         return self._save_file(payload, extension, name, [asset_id], options, "image")
 
     def archive(self, asset_ids, options):
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor
         import json
         asset_ids = list_value(asset_ids, "导出图片", maximum=self.settings.max_batch)
         asset_ids = list(dict.fromkeys(asset_ids))
@@ -101,19 +101,33 @@ class ExportService:
         def prepare(asset_id):
             image, asset = self.assets.load(asset_id)
             return self.encode(image, options)
+        # Encoding runs concurrently, but results are gathered back in
+        # selection order, so sequence numbers, filenames, payloads and the
+        # manifest always describe the same asset regardless of which encode
+        # finishes first. Any failure aborts the whole export before a
+        # record or file is created.
         with self.processing.compute_lock:
             with ThreadPoolExecutor(max_workers=4) as pool:
                 futures = [pool.submit(prepare, asset_id) for asset_id in asset_ids]
-                with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                    for index, (asset_id, future) in enumerate(zip(asset_ids, as_completed(futures)), start=1):
-                        try:
-                            payload = future.result()
-                        except Exception:
-                            continue
-                        filename = f"{index:02d}_{asset_id[:8]}.{extension}"
-                        archive.writestr(filename, payload)
-                    manifest = {"options": options, "assets": asset_ids, "count": len(asset_ids)}
-                    archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+                payloads = []
+                for asset_id, future in zip(asset_ids, futures):
+                    try:
+                        payloads.append(future.result())
+                    except StudioError:
+                        raise
+                    except Exception as error:
+                        raise StudioError(
+                            "图片编码失败，已取消整个批量导出",
+                            code="encode_failed",
+                            status=422,
+                            details={"asset_id": asset_id},
+                        ) from error
+            with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for index, (asset_id, payload) in enumerate(zip(asset_ids, payloads), start=1):
+                    filename = f"{index:02d}_{asset_id[:8]}.{extension}"
+                    archive.writestr(filename, payload)
+                manifest = {"options": options, "assets": asset_ids, "count": len(asset_ids)}
+                archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         return self._save_file(buffer.getvalue(), "zip", "光屿_批量导出.zip", asset_ids, options, "archive")
 
     def file(self, export_id):
