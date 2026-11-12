@@ -29,3 +29,11 @@ class Conflict(StudioError):
     def __init__(self, message):
         super().__init__(message, code="conflict", status=409)
 
+
+class StorageFailure(RuntimeError):
+    """Raised when a durable write cannot be committed atomically.
+
+    Deliberately not a StudioError: a failed commit is a server-side fault
+    (HTTP 500), never a client validation error.
+    """
+

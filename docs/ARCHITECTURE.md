@@ -58,7 +58,7 @@ Flask 路由与错误边界
 | events | action、message、details |
 | exports | filename、download_name、asset_ids、options、kind、bytes |
 
-锁覆盖 JSON 读改写全过程，写入采用新临时文件、flush/fsync、备份旧文件、`os.replace`。读到损坏 JSON 时尝试恢复上一个有效备份；无有效备份时明确失败，不静默重置数据。
+锁覆盖 JSON 读改写全过程。所有修改先在深拷贝上暂存，写入采用新临时文件、flush/fsync、经临时备份文件原子轮转旧文件、再 `os.replace` 主文件；只有替换成功后暂存数据才发布到内存缓存。临时文件或原子替换失败时抛出 `StorageFailure`（HTTP 边界映射为 500），内存与磁盘都保持最后一次成功提交的状态，临时文件立即清理，后续成功写入不会夹带失败修改，重启读取与运行中已提交状态完全一致（含嵌套 metadata）。读到损坏 JSON 时尝试恢复上一个有效备份；无有效备份时明确失败，不静默重置或伪造空数据。
 
 图片文件与 JSON 不是一个跨文件事务。服务写入失败会清理新建图片，但突然断电仍可能遗留孤立文件，诊断接口会列出。完整备份需要同时保存 `data/json`、`data/media`、`data/exports`。
 
